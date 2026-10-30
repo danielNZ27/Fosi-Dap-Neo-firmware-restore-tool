@@ -119,13 +119,17 @@ class Rockusb:
         except Exception:
             pass
 
-def restore():
-    stock_img = Path(__file__).resolve().parent / "DP3_V137.img"
+def restore(target_img=None):
+    if target_img:
+        stock_img = Path(target_img).resolve()
+    else:
+        stock_img = Path(__file__).resolve().parent / "DP3_V137.img"
     if not stock_img.exists():
         raise FileNotFoundError(f"Missing {stock_img}")
     raw_payload = stock_img.read_bytes()[:13631488]
     total_sectors = len(raw_payload) // 512
 
+    print(f"Firmware image: {stock_img.name} ({len(raw_payload)} bytes / {total_sectors} sectors)")
     print("Locating DAP Neo in Rockusb recovery mode...")
     path = device_path()
     print(f"Connected: {path}")
@@ -147,7 +151,7 @@ def restore():
         slots = [("Slot 1 (sector 0)", 0), ("Slot 2 (sector 30720)", 30720)]
 
         for slot_name, base_lba in slots:
-            print(f"\nWriting stock DP3_V137 to {slot_name} ({total_sectors} sectors / ~13 MiB)...")
+            print(f"\nWriting {stock_img.name} to {slot_name} ({total_sectors} sectors / ~13 MiB)...")
             chunk_sectors = 16
             for sec in range(0, total_sectors, chunk_sectors):
                 count = min(chunk_sectors, total_sectors - sec)
@@ -160,16 +164,17 @@ def restore():
         print("\nVerifying written Slot 1...")
         check = usb.command(0x14, 512, 0, 1)
         if check[:512] == raw_payload[:512]:
-            print("[SUCCESS] Verified Slot 1 matches stock DP3_V137 header!")
+            print(f"[SUCCESS] Verified Slot 1 matches {stock_img.name} header!")
         else:
             raise RuntimeError("Verification mismatch on Slot 1!")
 
-        print("\nResetting DAP Neo into stock firmware...")
+        print("\nResetting DAP Neo...")
         usb.reset()
-        print("\n[COMPLETE] Player restarted into stock firmware!")
-        print("Disconnect USB and power it on normally. You will see stock UI and normal USB drives (E: and F:).")
+        print(f"\n[COMPLETE] Successfully flashed {stock_img.name} and restarted player!")
+        print("Disconnect USB and power it on normally.")
     finally:
         usb.close()
 
 if __name__ == "__main__":
-    restore()
+    target = sys.argv[1] if len(sys.argv) > 1 else None
+    restore(target)

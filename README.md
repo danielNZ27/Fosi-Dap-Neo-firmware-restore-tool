@@ -57,22 +57,26 @@ If Windows does not recognize your DAP Neo in recovery mode (or if you get `Expe
 5. Keep holding the three buttons for **3 to 5 seconds** after connecting the cable, then release them.
 6. The screen will remain **completely black** — this confirms the player has successfully entered hardware Rockusb recovery mode.
 
-### 2. Run the Restore Script
+### 2. Run the Restore / Flashing Script
 1. Clone or download this repository to your computer.
-2. Open a Command Prompt or PowerShell terminal inside the repository folder containing `restore-stock.py` and `DP3_V137.img`.
-3. Run the restore script:
+2. Open a Command Prompt or PowerShell terminal inside the repository folder.
+3. To restore factory stock firmware (`DP3_V137.img`):
    ```cmd
    python restore-stock.py
+   ```
+   Or to flash a custom firmware image directly (e.g. NeoPod):
+   ```cmd
+   python restore-stock.py path/to/DP3_V147.IMG
    ```
 4. The tool will:
    - Locate the Rockusb interface in Windows.
    - Handshake with the Rockchip processor and query chip/flash IDs.
-   - Flash the factory firmware image to **Slot 1 (sector 0)**.
-   - Flash the factory firmware image to **Slot 2 (sector 30720 / 15 MiB offset)**.
+   - Flash the firmware image to **Slot 1 (sector 0)**.
+   - Flash the firmware image to **Slot 2 (sector 30720 / 15 MiB offset)**.
    - Verify the written sectors and issue a software reset signal.
 
 ### 3. Reset and Normal Boot
-1. When the script displays `[COMPLETE] Player restarted into stock firmware!`:
+1. When the script displays `[COMPLETE] Successfully flashed ... and restarted player!`:
 2. **Unplug** the USB cable from the DAP Neo.
 3. Use a **paperclip** (or SIM ejector tool) to gently press the physical **Reset button** located next to the USB-C port.
 4. Press the **Power** button to boot normally. The stock Fosi Audio operating system will load with internal storage and SD card functionality fully restored.

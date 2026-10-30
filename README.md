@@ -2,7 +2,7 @@
 
 A low-level recovery and stock firmware restore utility for the **Fosi Audio DAP Neo** digital audio player. 
 
-This tool communicates directly with the onboard Rockchip processor over the USB **Rockusb** recovery protocol to re-flash the factory firmware image (`DP3_V137.img`) to both system boot slots (Slot 1 at sector 0 and Slot 2 at sector 30720) in the event of a soft-brick, corrupted partition, or when reverting from experimental firmware.
+This tool communicates directly with the onboard Rockchip processor over the USB **Rockusb** recovery protocol to re-flash the factory firmware image (`DP3_V137.img`) to both system boot slots (Slot 1 at sector 0 and Slot 2 at sector 30720) in the event of a soft-brick, corrupted partition, or when reverting from experimental firmware (such as [NeoPod](https://github.com/danielNZ27/NeoPod)).
 
 ---
 

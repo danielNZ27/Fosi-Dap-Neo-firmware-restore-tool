@@ -6,6 +6,15 @@ This tool communicates directly with the onboard Rockchip processor over the USB
 
 ---
 
+## ⚠️ Disclaimer
+
+> [!IMPORTANT]
+> **Use at your own risk.** The author and contributors of this tool are **NOT responsible** for any damage, data loss, bricked hardware, or hardware failure that may result from using this software. 
+> 
+> This is an independent, community-developed recovery utility. The author is **NOT affiliated with, endorsed by, or connected to Fosi Audio in ANY WAY.**
+
+---
+
 ## Prerequisites & Dependencies
 
 1. **Operating System:**
@@ -15,7 +24,26 @@ This tool communicates directly with the onboard Rockchip processor over the USB
    - **No external pip packages required** (uses standard library modules: `ctypes`, `winreg`, `struct`, `hashlib`, `pathlib`).
 3. **Rockchip USB Driver:**
    - The DAP Neo must enumerate as a Rockusb device (`VID_2207&PID_262D`).
-   - If Windows does not recognize the device in recovery mode, install the standard **Rockchip DriverAssistant** (`rockusb.sys`).
+   - If Windows does not recognize the device when plugged in recovery mode, install the included Rockchip DriverAssistant.
+
+---
+
+## Installing the Rockchip USB Driver
+
+If Windows does not recognize your DAP Neo in recovery mode (or if you get `Expected 1 Rockusb recovery interface, found 0`), install the official driver included directly in this repository:
+
+1. **Locate the driver installer:**
+   - Navigate to the [`drivers/DriverAssistant_v5.14/`](./drivers/DriverAssistant_v5.14/) folder inside this repository.
+2. **Run the Installer:**
+   - Right-click **`DriverInstall.exe`** and select **Run as administrator**.
+3. **Install the Driver:**
+   - Click the **Install Driver** button (or 驱动安装).
+   - If prompted by Windows Security asking whether to install device software from Rockchip, click **Install**.
+   - Wait for the message confirming driver installation succeeded, then exit the program.
+4. **Verify in Windows Device Manager:**
+   - Boot your DAP Neo into recovery mode (see below) and plug it into your PC.
+   - Open Windows **Device Manager** (`devmgmt.msc`).
+   - Under **Class for rockusb devices** (or **Universal Serial Bus devices**), verify that **Rockusb Device** is displayed without any yellow warning triangles.
 
 ---
 
@@ -31,7 +59,7 @@ This tool communicates directly with the onboard Rockchip processor over the USB
 
 ### 2. Run the Restore Script
 1. Clone or download this repository to your computer.
-2. Open a Command Prompt or PowerShell terminal inside the folder containing `restore-stock.py` and `DP3_V137.img`.
+2. Open a Command Prompt or PowerShell terminal inside the repository folder containing `restore-stock.py` and `DP3_V137.img`.
 3. Run the restore script:
    ```cmd
    python restore-stock.py
@@ -41,7 +69,7 @@ This tool communicates directly with the onboard Rockchip processor over the USB
    - Handshake with the Rockchip processor and query chip/flash IDs.
    - Flash the factory firmware image to **Slot 1 (sector 0)**.
    - Flash the factory firmware image to **Slot 2 (sector 30720 / 15 MiB offset)**.
-   - Verify the written sectors and issue a reset signal.
+   - Verify the written sectors and issue a software reset signal.
 
 ### 3. Reset and Normal Boot
 1. When the script displays `[COMPLETE] Player restarted into stock firmware!`:
@@ -56,21 +84,15 @@ This tool communicates directly with the onboard Rockchip processor over the USB
 - **Included Firmware:** `DP3_V137.img` (Stock DP3 V1.37 factory firmware)
   - **SHA-256:** `fcc1cd3e35b46f1f8dbcb8da39fcc5eb3f1d469cdfade5e9c6ea3bd71ac6deef`
 - **Official Releases:**
-  - For the latest firmware versions, release notes, and official updates, please refer directly to [Fosi Audio's Official Website and Support](https://fosiaudio.com).
+  - For official firmware versions, release notes, and updates, visit [Fosi Audio's Official Website and Support](https://fosiaudio.com).
 
 ---
 
 ## Troubleshooting
 
 - **Error: `Expected 1 Rockusb recovery interface, found 0`:**
-  - The DAP Neo is either not in recovery mode or the USB driver is missing.
-  - Check Windows Device Manager under *Class for rockusb devices* or *Universal Serial Bus controllers* to verify `Rockusb Device` is listed with Hardware ID `VID_2207&PID_262D`.
+  - The DAP Neo is either not in recovery mode or the USB driver has not been installed yet.
+  - Install the driver using `drivers/DriverAssistant_v5.14/DriverInstall.exe` as described above.
   - Repeat the 3-button plug-in sequence (VOL +, VOL -, OK) carefully.
 - **Permission Errors:**
   - If you encounter access denied errors accessing USB pipes, run Command Prompt or PowerShell as **Administrator**.
-
----
-
-## License & Disclaimer
-
-This tool is provided for recovery and maintenance purposes. Flashing firmware always carries inherent risks; ensure all connections remain stable during the flashing process.

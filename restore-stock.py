@@ -1,0 +1,175 @@
+"""Restore stock DP3_V137 firmware to Fosi DAP Neo via Rockusb.
+
+Requires DAP Neo in Rockusb recovery mode:
+  1. Unplug USB cable.
+  2. If player is on, hold Power for 2-3 seconds until screen turns off.
+  3. Hold Vol+ + Vol- + OK together (do not touch Power).
+  4. Plug in USB cable while holding those 3 buttons for 3-5 seconds, then release.
+  5. Screen stays black (recovery mode).
+  6. Run: python restore-stock.py
+"""
+import ctypes as c
+from ctypes import wintypes as w
+import winreg, struct, hashlib, sys, time
+from pathlib import Path
+
+k = c.WinDLL('kernel32', use_last_error=True)
+class OV(c.Structure):
+    _fields_ = [('Internal', c.c_size_t), ('InternalHigh', c.c_size_t),
+                ('Offset', w.DWORD), ('OffsetHigh', w.DWORD), ('hEvent', w.HANDLE)]
+
+k.CreateFileW.argtypes = [w.LPCWSTR, w.DWORD, w.DWORD, c.c_void_p, w.DWORD, w.DWORD, w.HANDLE]
+k.CreateFileW.restype = w.HANDLE
+k.CreateEventW.argtypes = [c.c_void_p, w.BOOL, w.BOOL, w.LPCWSTR]
+k.CreateEventW.restype = w.HANDLE
+for name in ('ReadFile', 'WriteFile'):
+    getattr(k, name).argtypes = [w.HANDLE, c.c_void_p, w.DWORD, c.POINTER(w.DWORD), c.POINTER(OV)]
+    getattr(k, name).restype = w.BOOL
+k.WaitForSingleObject.argtypes = [w.HANDLE, w.DWORD]
+k.WaitForSingleObject.restype = w.DWORD
+k.GetOverlappedResult.argtypes = [w.HANDLE, c.POINTER(OV), c.POINTER(w.DWORD), w.BOOL]
+k.CancelIoEx.argtypes = [w.HANDLE, c.POINTER(OV)]
+k.CloseHandle.argtypes = [w.HANDLE]
+
+def device_path():
+    base = r'SYSTEM\CurrentControlSet\Control\DeviceClasses\{a5dcbf10-6530-11d2-901f-00c04fb951ed}'
+    found = []
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, base) as key:
+            for i in range(winreg.QueryInfoKey(key)[0]):
+                name = winreg.EnumKey(key, i)
+                if '#vid_2207&pid_262d#' in name.lower():
+                    found.append('\\\\?\\' + name[4:])
+    except Exception:
+        pass
+    if len(found) != 1:
+        raise RuntimeError(f'Expected 1 Rockusb recovery interface, found {len(found)}. Ensure DAP Neo is in recovery mode (Vol+ + Vol- + OK while plugging in USB).')
+    return found[0]
+
+def transfer(h, data_or_length, write=False):
+    length = len(data_or_length) if write else data_or_length
+    buf = c.create_string_buffer(data_or_length if write else length)
+    ov = OV()
+    ov.hEvent = k.CreateEventW(None, True, False, None)
+    if not ov.hEvent: raise c.WinError(c.get_last_error())
+    count = w.DWORD()
+    try:
+        ok = (k.WriteFile if write else k.ReadFile)(h, buf, length, c.byref(count), c.byref(ov))
+        if not ok:
+            err = c.get_last_error()
+            if err != 997: raise c.WinError(err)
+            if k.WaitForSingleObject(ov.hEvent, 8000) != 0:
+                k.CancelIoEx(h, c.byref(ov))
+                k.GetOverlappedResult(h, c.byref(ov), c.byref(count), True)
+                raise TimeoutError('USB transfer timed out')
+            if not k.GetOverlappedResult(h, c.byref(ov), c.byref(count), False):
+                raise c.WinError(c.get_last_error())
+        if write and count.value != length:
+            raise RuntimeError(f'Short write: {count.value} / {length}')
+        return buf.raw[:count.value]
+    finally:
+        k.CloseHandle(ov.hEvent)
+
+class Rockusb:
+    def __init__(self, path):
+        self.tag = 0x4e454f00
+        # Installed driver (rockusb.sys): \\0 is IN pipe, \\1 is OUT pipe
+        self.h = k.CreateFileW(path + '\\0', 0xc0000000, 3, None, 3, 0x40000000, None)
+        if self.h == c.c_void_p(-1).value: raise c.WinError(c.get_last_error())
+        self.write_h = k.CreateFileW(path + '\\1', 0xc0000000, 3, None, 3, 0x40000000, None)
+        if self.write_h == c.c_void_p(-1).value:
+            k.CloseHandle(self.h)
+            raise c.WinError(c.get_last_error())
+
+    def close(self):
+        k.CloseHandle(self.h)
+        k.CloseHandle(self.write_h)
+
+    def command(self, opcode, length, address=0, sectors=0):
+        self.tag += 1
+        cb = bytes([opcode, 0]) + struct.pack('>I', address) + b'\0' + struct.pack('>H', sectors) + b'\0'*7
+        cbw = struct.pack('<IIIBBB', 0x43425355, self.tag, length, 0x80, 0, 10 if opcode == 0x14 else 6) + cb
+        transfer(self.write_h, cbw, write=True)
+        payload = transfer(self.h, 512 if opcode == 0x1a else length, write=False)
+        status = transfer(self.h, 13, write=False)
+        sign, tag, residue, result = struct.unpack('<IIIB', status)
+        if sign != 0x53425355 or tag != self.tag or result != 0:
+            raise RuntimeError(f'Command 0x{opcode:x} failed: status={result}')
+        return payload
+
+    def write_lba(self, lba, data):
+        sectors = len(data) // 512
+        self.tag += 1
+        cb = bytes([0x15, 0]) + struct.pack('>I', lba) + b'\0' + struct.pack('>H', sectors) + b'\0'*7
+        cbw = struct.pack('<IIIBBB', 0x43425355, self.tag, len(data), 0x00, 0, 10) + cb
+        transfer(self.write_h, cbw, write=True)
+        transfer(self.write_h, data, write=True)
+        status = transfer(self.h, 13, write=False)
+        sign, tag, residue, result = struct.unpack('<IIIB', status)
+        if sign != 0x53425355 or tag != self.tag or result != 0:
+            raise RuntimeError(f'Write failed at LBA {lba}: status={result}')
+
+    def reset(self):
+        self.tag += 1
+        cb = bytes([0xFF, 0]) + b'\0'*14
+        cbw = struct.pack('<IIIBBB', 0x43425355, self.tag, 0, 0x00, 0, 6) + cb
+        try:
+            transfer(self.write_h, cbw, write=True)
+            transfer(self.h, 13, write=False)
+        except Exception:
+            pass
+
+def restore():
+    stock_img = Path(__file__).resolve().parent / "DP3_V137.img"
+    if not stock_img.exists():
+        raise FileNotFoundError(f"Missing {stock_img}")
+    raw_payload = stock_img.read_bytes()[:13631488]
+    total_sectors = len(raw_payload) // 512
+
+    print("Locating DAP Neo in Rockusb recovery mode...")
+    path = device_path()
+    print(f"Connected: {path}")
+
+    usb = Rockusb(path)
+    try:
+        # Standard Rockusb initialization handshake
+        chip = usb.command(0x1B, 16)
+        print("Chip Info:", chip.hex(), repr(chip[:16]))
+        flash = usb.command(0x1A, 11)
+        print("Flash Info:", flash.hex())
+
+        # Test LBA read
+        lba0 = usb.command(0x14, 512, 0, 1)
+        print(f"Verified LBA 0 header magic: {lba0[0x1f8:0x200]}")
+
+        # Slot 1: sector 0
+        # Slot 2: sector 30720 (15 MiB)
+        slots = [("Slot 1 (sector 0)", 0), ("Slot 2 (sector 30720)", 30720)]
+
+        for slot_name, base_lba in slots:
+            print(f"\nWriting stock DP3_V137 to {slot_name} ({total_sectors} sectors / ~13 MiB)...")
+            chunk_sectors = 16
+            for sec in range(0, total_sectors, chunk_sectors):
+                count = min(chunk_sectors, total_sectors - sec)
+                chunk = raw_payload[sec * 512:(sec + count) * 512]
+                usb.write_lba(base_lba + sec, chunk)
+                if sec % 2048 == 0 or sec + count >= total_sectors:
+                    pct = (sec + count) * 100 // total_sectors
+                    print(f"  {pct}% ({sec * 512 // 1048576} / {len(raw_payload) // 1048576} MiB)", flush=True)
+
+        print("\nVerifying written Slot 1...")
+        check = usb.command(0x14, 512, 0, 1)
+        if check[:512] == raw_payload[:512]:
+            print("[SUCCESS] Verified Slot 1 matches stock DP3_V137 header!")
+        else:
+            raise RuntimeError("Verification mismatch on Slot 1!")
+
+        print("\nResetting DAP Neo into stock firmware...")
+        usb.reset()
+        print("\n[COMPLETE] Player restarted into stock firmware!")
+        print("Disconnect USB and power it on normally. You will see stock UI and normal USB drives (E: and F:).")
+    finally:
+        usb.close()
+
+if __name__ == "__main__":
+    restore()
